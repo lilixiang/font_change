@@ -1,24 +1,22 @@
 document.addEventListener('DOMContentLoaded', async () => {
-  const domain = await getCurrentDomain();
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const domain = new URL(tab.url).hostname;
   const config = await getConfig(domain);
 
-  // 获取当前页面的字体样式
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  const [result] = await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
-    func: () => {
-      const body = document.body;
-      const style = window.getComputedStyle(body);
-      return {
-        fontFamily: style.fontFamily,
-        fontSize: parseInt(style.fontSize),
-        lineHeight: parseFloat(style.lineHeight) / parseFloat(style.fontSize),
-        fontWeight: style.fontWeight
-      };
-    }
-  });
-
-  const pageStyle = result.result;
+  let pageStyle = { fontSize: 16, lineHeight: 1.6 };
+  try {
+    const [result] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => {
+        const style = window.getComputedStyle(document.body);
+        return {
+          fontSize: parseInt(style.fontSize),
+          lineHeight: (parseFloat(style.lineHeight) / parseFloat(style.fontSize)).toFixed(1)
+        };
+      }
+    });
+    if (result.result) pageStyle = result.result;
+  } catch (e) { /* chrome://, edge:// 等特殊页面无法注入 */ }
 
   document.getElementById('enabled').checked = config.enabled !== false;
   document.getElementById('fontFamily').value = config.fontFamily || '';
@@ -56,17 +54,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     await chrome.storage.local.set({ [`config_${domain}`]: newConfig });
-
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     chrome.tabs.reload(tab.id);
     window.close();
   });
 });
-
-async function getCurrentDomain() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  return new URL(tab.url).hostname;
-}
 
 async function getConfig(domain) {
   const result = await chrome.storage.local.get(`config_${domain}`);
